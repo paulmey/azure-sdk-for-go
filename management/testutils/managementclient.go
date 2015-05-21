@@ -27,5 +27,62 @@ func GetTestClient(t *testing.T) management.Client {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return client
+	return logger{client, t}
+}
+
+type logger struct {
+	management.Client
+	*testing.T
+}
+
+func chop(d []byte) string {
+	const maxlen = 5000
+
+	s := string(d)
+
+	if len(s) > maxlen {
+		return s[:maxlen] + "..."
+	}
+	return s
+}
+
+func (l logger) SendAzureGetRequest(url string) ([]byte, error) {
+	d, err := l.Client.SendAzureGetRequest(url)
+	l.T.Logf("AZURE> GET %s\n", url)
+	if err != nil {
+		l.T.Logf("   <<< ERROR: %+v\n", err)
+	} else {
+		l.T.Logf("   <<< %s\n", chop(d))
+	}
+	return d, err
+}
+
+func (l logger) SendAzurePostRequest(url string, data []byte) (management.OperationID, error) {
+	oid, err := l.Client.SendAzurePostRequest(url, data)
+	logOperation(l.T, "POST", url, data, oid, err)
+	return oid, err
+}
+
+func (l logger) SendAzurePutRequest(url string, contentType string, data []byte) (management.OperationID, error) {
+	oid, err := l.Client.SendAzurePutRequest(url, contentType, data)
+	logOperation(l.T, "PUT", url, data, oid, err)
+	return oid, err
+}
+
+func (l logger) SendAzureDeleteRequest(url string) (management.OperationID, error) {
+	oid, err := l.Client.SendAzureDeleteRequest(url)
+	logOperation(l.T, "DELETE", url, nil, oid, err)
+	return oid, err
+}
+
+func logOperation(t *testing.T, method, url string, data []byte, oid management.OperationID, err error) {
+	t.Logf("AZURE> %s %s\n", method, url)
+	if data != nil {
+		t.Logf("   >>> %s\n", chop(data))
+	}
+	if err != nil {
+		t.Logf("   <<< ERROR: %+v\n", err)
+	} else {
+		t.Logf("   <<< OperationID: %s\n", oid)
+	}
 }
