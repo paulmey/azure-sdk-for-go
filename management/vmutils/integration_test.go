@@ -2,6 +2,7 @@ package vmutils
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -164,6 +165,93 @@ func TestRoleStateOperations(t *testing.T) {
 		return vmc.RestartRole(vmname, vmname, vmname)
 	}); err != nil {
 		t.Error(err)
+	}
+
+	deleteHostedService(t, client, vmname)
+}
+
+func TestUpdateRoleExtensions(t *testing.T) {
+	client := testutils.GetTestClient(t)
+	vmname := GenerateName()
+	sa := GetTestStorageAccount(t, client)
+	location := sa.StorageServiceProperties.Location
+
+	role := NewVMConfiguration(vmname, "Standard_D3")
+	if err := ConfigureDeploymentFromPlatformImage(&role,
+		GetLinuxTestImage(t, client).Name,
+		fmt.Sprintf("http://%s.blob.core.windows.net/sdktest/%s.vhd", sa.ServiceName, vmname),
+		GenerateName()); err != nil {
+		t.Error(err)
+	}
+	if err := ConfigureForLinux(&role, "myvm", "azureuser", GeneratePassword()); err != nil {
+		t.Error(err)
+	}
+
+	config, _ := json.Marshal(struct {
+		Command string `json:"commandToExecute"`
+	}{"touch /tmp/hello"})
+	if err := AddAzureVMExtensionConfiguration(&role,
+		"CustomScriptForLinux", "Microsoft.OSTCExtensions", "1.2",
+		"cs", "enable",
+		config, nil); err != nil {
+		t.Error(err)
+	}
+
+	createRoleConfiguration(t, client, role, location)
+
+	vmc := vm.NewClient(client)
+	role, err := vmc.GetRole(vmname, vmname, vmname)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if role.ResourceExtensionReferences == nil ||
+		len(*role.ResourceExtensionReferences) != 1 ||
+		(*role.ResourceExtensionReferences)[0].ReferenceName != "cs" {
+		t.Errorf("Expected role to have one extension installed: %+v", role)
+	}
+
+	role = vm.Role{}
+	if err := Await(client, func() (management.OperationID, error) {
+		return vmc.UpdateRole(vmname, vmname, vmname, role)
+	}); err != nil {
+		t.Error(err)
+	}
+
+	if role, err = vmc.GetRole(vmname, vmname, vmname); err != nil {
+		t.Error(err)
+	} else if role.ResourceExtensionReferences == nil ||
+		len(*role.ResourceExtensionReferences) != 1 ||
+		(*role.ResourceExtensionReferences)[0].ReferenceName != "cs" {
+		t.Errorf("Expected role to have one extension installed: %+v", role)
+	}
+
+	role = vm.Role{}
+	if err := AddAzureVMExtensionConfiguration(&role,
+		"CustomScriptForLinux", "Microsoft.OSTCExtensions", "1.2",
+		"cs", "uninstall",
+		nil, nil); err != nil {
+		t.Error(err)
+	}
+	if err = AddAzureVMExtensionConfiguration(&role,
+		"OSPatchingForLinux", "Microsoft.OSTCExtensions", "1.0",
+		"osp", "enable",
+		nil, nil); err != nil {
+		t.Error(err)
+	}
+
+	if err = Await(client, func() (management.OperationID, error) {
+		return vmc.UpdateRole(vmname, vmname, vmname, role)
+	}); err != nil {
+		t.Error(err)
+	}
+
+	if role, err = vmc.GetRole(vmname, vmname, vmname); err != nil {
+		t.Error(err)
+	} else if role.ResourceExtensionReferences == nil ||
+		len(*role.ResourceExtensionReferences) != 1 ||
+		(*role.ResourceExtensionReferences)[0].ReferenceName != "osp" {
+		t.Errorf("Expected role to have one extension installed (osp): %+v", role)
 	}
 
 	deleteHostedService(t, client, vmname)

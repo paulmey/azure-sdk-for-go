@@ -91,31 +91,26 @@ func (vm VirtualMachineClient) DeleteDeployment(cloudServiceName, deploymentName
 	return vm.client.SendAzureDeleteRequest(requestURL)
 }
 
-func (vm VirtualMachineClient) GetRole(cloudServiceName, deploymentName, roleName string) (*Role, error) {
+func (vm VirtualMachineClient) GetRole(cloudServiceName, deploymentName, roleName string) (Role, error) {
+	role := Role{}
 	if cloudServiceName == "" {
-		return nil, fmt.Errorf(errParamNotSpecified, "cloudServiceName")
+		return role, fmt.Errorf(errParamNotSpecified, "cloudServiceName")
 	}
 	if deploymentName == "" {
-		return nil, fmt.Errorf(errParamNotSpecified, "deploymentName")
+		return role, fmt.Errorf(errParamNotSpecified, "deploymentName")
 	}
 	if roleName == "" {
-		return nil, fmt.Errorf(errParamNotSpecified, "roleName")
+		return role, fmt.Errorf(errParamNotSpecified, "roleName")
 	}
-
-	role := new(Role)
 
 	requestURL := fmt.Sprintf(azureRoleURL, cloudServiceName, deploymentName, roleName)
 	response, azureErr := vm.client.SendAzureGetRequest(requestURL)
 	if azureErr != nil {
-		return nil, azureErr
+		return role, azureErr
 	}
 
-	err := xml.Unmarshal(response, role)
-	if err != nil {
-		return nil, err
-	}
-
-	return role, nil
+	err := xml.Unmarshal(response, &role)
+	return role, err
 }
 
 // UpdateRole updates the configuration of the specified virtual machine
